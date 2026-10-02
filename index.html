@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- 云端/登录/历史事件控件样式（仅新增，不影响原画布样式） -->
+<link rel="stylesheet" href="css/cloud.css">
+<!-- Supabase JS SDK（v2，UMD 全局 window.supabase） -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>架空王朝疆域全图 · 可编辑版</title>
+<style>
+  :root{
+    --ink:#3d2b1a; --paper:#f0e7d0; --paper2:#e7dcc1;
+    --accent:#a83c2a; --line:#6b4f2e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:"Kaiti SC","STKaiti","KaiTi","Songti SC",serif;
+    color:var(--ink); background:var(--paper);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  /* ============ 顶栏 ============ */
+  header{
+    background:linear-gradient(#f5edd9,#e9dfc4);
+    border-bottom:2px solid var(--line);
+    padding:8px 18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  .dynasty{font-size:24px;font-weight:bold;letter-spacing:3px;border-radius:4px;padding:2px 8px;outline:none}
+  .dynasty[contenteditable="true"]{background:#fff8e6;box-shadow:inset 0 0 0 1px var(--accent)}
+  .sub{font-size:12px;color:#7a5c33}
+  .toolbar{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button{
+    font-family:inherit;font-size:13px;color:var(--ink);cursor:pointer;
+    background:#f7efda;border:1px solid var(--line);border-radius:4px;padding:5px 12px;
+  }
+  button:hover{background:#fff6de}
+  button.primary{background:var(--accent);color:#f7efda;border-color:#7d2c1e}
+  button.primary:hover{background:#bd4632}
+  button.on{background:var(--ink);color:#f7efda}
+  #saveState{font-size:11px;color:#7a5c33;min-width:128px;text-align:right}
+  /* ============ 主区 ============ */
+  main{flex:1;display:flex;min-height:0}
+  #mapWrap{flex:1;position:relative;background:var(--paper);overflow:hidden}
+  #map{width:100%;height:100%;display:block;cursor:grab}
+  #map.dragging{cursor:grabbing}
+  .regionPath{stroke-linejoin:round;cursor:pointer;transition:filter .12s}
+  .regionPath:hover{filter:brightness(1.08)}
+  .regionPath.lost{opacity:.5;cursor:default}
+  .rlabel.lost{font-style:italic}
+  /* 朝代切换 */
+  .dynSwitch{display:flex;gap:0;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .dynSwitch button{border:none;border-radius:0;border-right:1px solid var(--line);padding:5px 10px;font-size:14px}
+  .dynSwitch button:last-child{border-right:none}
+  .dynSwitch button.on{background:var(--ink);color:#f7efda}
+  .dynYears{font-size:11px;color:#7a5c33;max-width:180px;line-height:1.4}
+  .seamLine{fill:none;stroke:#fff;stroke-width:1;opacity:.55;pointer-events:none}
+  .rlabel{font-size:15px;font-weight:bold;text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:#f4ecd6;stroke-width:3.4px;stroke-linejoin:round}
+  .statelabel{font-size:10px;text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:#f7efda;stroke-width:2.6px}
+  .statelabel.imp{font-size:11.5px;font-weight:bold}
+  .statedot{cursor:pointer}
+  .statedot circle{transition:r .12s}
+  .statedot:hover circle{r:5.5}
+  .statedot.sel circle{fill:var(--accent)}
+  .geoLine{fill:none;pointer-events:none}
+  .mapnote{font-size:13px;fill:#7a6a3a;pointer-events:none}
+  .seaText{font-size:15px;fill:#5b7d9c;pointer-events:none;letter-spacing:5px}
+  /* 缩放控件 */
+  .zoomCtl{position:absolute;left:14px;top:14px;display:flex;flex-direction:column;gap:4px}
+  .zoomCtl button{width:34px;height:30px;font-size:17px;padding:0}
+  .hint{position:absolute;left:14px;bottom:12px;font-size:12px;color:#7a5c33;background:#f2ead6cc;border:1px solid #b89c6a;border-radius:4px;padding:5px 10px}
+  /* ============ 侧栏 ============ */
+  aside{
+    width:372px;min-width:372px;background:#f6eeda;border-left:2px solid var(--line);
+    overflow-y:auto;padding:18px 20px;
+  }
+  .empty{color:#8a7450;font-size:13px;line-height:2;margin-top:30px;text-align:center}
+  .badge{display:inline-block;font-size:11px;background:var(--accent);color:#f7efda;border-radius:3px;padding:1px 8px;margin-bottom:10px}
+  .badge.state{background:#5b7d9c}
+  h2{font-size:20px;margin-bottom:4px}
+  .field{margin-top:14px}
+  .field label{display:block;font-size:12px;color:#7a5c33;margin-bottom:4px}
+  .field input[type=text],.field textarea{
+    width:100%;font-family:inherit;font-size:14px;color:var(--ink);
+    background:transparent;border:1px solid transparent;border-radius:3px;padding:5px 7px;resize:vertical;
+  }
+  .field input.rd,.field textarea.rd{cursor:default}
+  body.editing .field input[type=text],body.editing .field textarea{background:#fffaf0;border-color:#c8b487}
+  .field input[type=color]{width:46px;height:28px;border:1px solid #c8b487;background:#fffaf0;border-radius:3px;vertical-align:middle;cursor:pointer}
+  .county-box{font-size:13px;line-height:1.9;background:#fffaf0aa;border-radius:4px;padding:7px 10px}
+  .county-chip{display:inline-block;margin:2px 3px;padding:1px 8px;background:#efe4c8;border:1px solid #cdb885;border-radius:10px;font-size:12px;cursor:pointer}
+  .county-chip:hover{background:#fff}
+  .story-box{
+    font-size:13.5px;line-height:2;background:#fbf3df;border-left:3px solid var(--accent);
+    border-radius:0 4px 4px 0;padding:8px 12px;white-space:pre-wrap;
+  }
+  .geo-box{font-size:13.5px;line-height:1.95;white-space:pre-wrap}
+  .stateList{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+  .stateList .county-chip{border-color:#8fb0c9;background:#e6eef5}
+  .addbtn{margin-top:10px;font-size:12px;padding:3px 10px}
+  .readonly-tip{font-size:11px;color:#a0895a;margin-top:18px;text-align:center}
+  @media print{
+    header,aside,.zoomCtl,.hint{display:none!important}
+    main{display:block} #mapWrap{height:100vh}
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= 登录遮罩：未登录拦截（无注册入口） ================= -->
+<div id="authGate">
+  <form class="auth-card" id="authForm" autocomplete="off">
+    <h1>疆域画布 · 登录</h1>
+    <div class="auth-sub">账号由管理员在 Supabase 后台创建，不开放注册</div>
+    <label for="authEmail">邮箱</label>
+    <input type="email" id="authEmail" required placeholder="you@example.com">
+    <label for="authPassword">密码</label>
+    <input type="password" id="authPassword" required placeholder="••••••••">
+    <button type="submit" id="authSubmit">登 录</button>
+    <div class="auth-msg" id="authMsg"></div>
+    <div class="auth-tip">
+      为防平台策略变更，登录后请定期使用顶部「导出备份」<br>把画布 JSON 保存到本地做备份。
+    </div>
+  </form>
+</div>
+
+<header>
+  <span class="dynasty" id="dynasty" title="可直接编辑国号">【国号】</span>
+  <span class="sub" id="subtitle">疆域全图 · 晋汉唐宋明五朝合制 · 双时间线通用底图</span>
+  <div class="dynSwitch" id="dynSwitch"></div>
+  <span class="dynYears" id="dynYears"></span>
+  <div class="toolbar">
+    <span id="userChip"></span>
+    <span id="saveState"></span>
+    <button id="saveCloudBtn" title="把当前画布写入 Supabase canvas_data 表">💾 保存云端</button>
+    <button id="loadCloudBtn" title="从 Supabase 读取本人最新画布">☁ 加载云端</button>
+    <button id="editBtn" class="primary">✎ 进入编辑</button>
+    <button id="exportBtn" title="导出画布 JSON 到本地（建议定期备份）">⬇ 导出备份</button>
+    <button id="importBtn">导入备份</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none">
+    <button id="clearBtn" title="清空当前画布（可用恢复默认还原模板）">🗑 清空画布</button>
+    <button id="resetBtn">恢复默认</button>
+    <button id="printBtn">打印</button>
+    <button id="logoutBtn" title="退出登录">⏻ 退出</button>
+  </div>
+</header>
+
+<main>
+  <div id="mapWrap">
+    <svg id="map" viewBox="0 0 1280 960" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="snowP" width="16" height="16" patternUnits="userSpaceOnUse">
+          <rect width="16" height="16" fill="#ece5d4"/>
+          <path d="M2,12 L6,6 L10,12 Z" fill="none" stroke="#9aa5ad" stroke-width="0.8" opacity="0.7"/>
+        </pattern>
+        <path id="realmPath" d="
+          M950,110 C990,92 1040,98 1075,118 C1105,138 1112,168 1092,196
+          C1078,216 1055,224 1040,232 C1028,242 1032,258 1046,268
+          C1032,278 1016,284 1010,294 C1020,306 1030,316 1026,330
+          C1022,344 1010,352 998,350 C982,346 972,346 968,354
+          C978,358 990,356 1000,362 C1018,366 1042,372 1052,384
+          C1064,398 1058,410 1042,414 C1028,418 1022,428 1028,440
+          C1034,452 1032,466 1024,478 C1016,490 1002,500 994,510
+          C986,522 986,536 992,548 C982,562 974,578 968,592
+          C960,610 954,624 948,638 C942,654 934,664 924,674
+          C918,688 910,700 902,710 C894,702 886,694 878,692
+          C862,698 848,704 832,708 C812,716 794,724 776,730
+          C756,738 736,744 716,742 C694,740 674,732 658,720
+          C640,706 622,696 604,690 C576,682 548,678 520,674
+          C480,668 440,660 404,650 C368,640 336,626 308,610
+          C280,594 254,576 232,556 C208,536 184,514 162,494
+          C140,474 114,458 100,442 C92,430 96,414 110,402
+          C130,384 148,366 164,348 C182,328 198,306 220,286
+          C244,264 272,244 304,228 C340,210 378,196 418,186
+          C462,174 508,162 554,152 C604,140 654,128 704,118
+          C754,108 802,100 850,96 C886,92 920,96 950,110 Z"/>
+        <clipPath id="realmClip"><use href="#realmPath"/></clipPath>
+      </defs>
+
+      <rect x="0" y="0" width="1280" height="960" fill="#efe6cf"/>
+      <rect x="18" y="18" width="1244" height="924" fill="none" stroke="#6b4f2e" stroke-width="3"/>
+
+      <!-- 外部区域 -->
+      <text class="seaText" x="1140" y="470" transform="rotate(90 1140 470)">东　海</text>
+      <text class="seaText" x="1100" y="730" transform="rotate(90 1100 730)">南　海</text>
+      <text class="seaText" x="1000" y="350" style="font-size:12px">渤海</text>
+      <text class="mapnote" x="180" y="150" letter-spacing="4">塞北草原 · 【异族政权名】</text>
+
+      <!-- 雪域高原（羁縻） -->
+      <path fill="url(#snowP)" stroke="#9aa5ad" stroke-width="1.2" d="
+        M185,502 L575,455 L598,572 L480,662 L265,598 Z"/>
+      <text class="mapnote" x="340" y="560" text-anchor="middle" fill="#5d6d76">雪域高原 · 羁縻</text>
+
+      <!-- 海南岛 -->
+      <ellipse cx="876" cy="748" rx="22" ry="14" fill="#e8dcc0" stroke="#6b4f2e" stroke-width="1.6"/>
+
+      <g id="viewport">
+        <g id="layerRegions" clip-path="url(#realmClip)"></g>
+        <g id="layerSeams" clip-path="url(#realmClip)"></g>
+        <g id="layerSel" clip-path="url(#realmClip)"></g>
+        <use href="#realmPath" fill="none" stroke="#6b4f2e" stroke-width="3" stroke-linejoin="round" pointer-events="none"/>
+        <g id="layerGeo"></g>
+        <g id="layerRLabels"></g>
+        <g id="layerStates"></g>
+        <g id="layerSLabels"></g>
+        <g id="layerEvents"></g>
+      </g>
+    </svg>
+    <div class="zoomCtl">
+      <button id="zin">＋</button>
+      <button id="zout">－</button>
+      <button id="zreset" style="font-size:12px">复位</button>
+    </div>
+    <div class="hint">点击色块或州府查看详情；进入编辑模式后可改一切名称；滚轮缩放，拖动平移</div>
+  </div>
+
+  <aside id="panel">
+    <div class="empty">点击地图上的「道」或「州府」<br>在此查看地理与地方志故事</div>
+  </aside>
+</main>
+
+<script>
+/* ================================================================
+   数据模型：道 → 州府 → 县（县仅名；风物/故事只写重要州县）
+   ================================================================ */
+const DEFAULT_DATA = {
+  dynasty:"【国号】",
+  subtitle:"疆域全图 · 晋汉唐宋明五朝合制 · 双时间线通用底图",
+  regions:[
+  {
+   name:"京畿道", color:"#c0392b", cx:826, cy:408,
+   geo:"渭河平原，八水绕长安。四塞之国：东潼关、西大散、南武关、北萧关，沃野千里，宗室百官麇集。",
+   climate:"温带半湿润，四季分明，冬寒夏热，春短多风沙。八水绕长安，沃野千里，麦粟为主，秋来银杏满城金。",
+   folk:"祀后稷、拜土地、祓禊灞上。关中民质直，好稼穑，重门第，寒食禁火、清明踏青之风最盛。",
+   slang:"关中腔直硬短促，称“咋”为怎么，“谝”为闲谈，“嘹咂咧”为好极了。",
+   sects:"京兆游侠聚于东西市，“京兆帮”护漕护航。终南山隐者频出，传闻有异人授剑；僧寺道观林立，法门寺为皇家供奉。",
+   food:"面食为天：羊肉泡馍、裤带面、biangbiang面、甑糕、肉夹馍，佐西凤酒与酸梅汤。",
+   history:"周秦汉唐故都所在，帝王之气钟聚。然安史之乱两京残破，吐蕃曾入长安，兵燹屡加；每逢盛世必复为帝都，荣耀与伤疤并刻于此。",
+   d:"M798,396 L868,356 L876,392 L900,400 L898,440 L850,448 L798,440 Z",
+   states:[
+    {n:"京兆府",x:840,y:424,imp:true,co:["长安县","万年县","昭应县","蓝田县","咸阳县","泾阳县","醴泉县","兴平县","高陵县","鄠县"], sp:"西凤酒、甑糕、羊肉泡馍、唐三彩、关中皮影",
+     de:"帝都所在，朱雀大街宽逾百步，东西两市商贾万国。",
+     st:"西市有胡姬酒肆，夜不闭坊。旧传先帝微服尝至，醉题“太平”二字于壁，酒家拓之，至今悬为招财牌。"},
+    {n:"华州",x:888,y:406,co:["郑县","华阴县","下邽县"]},
+    {n:"同州",x:872,y:438,co:["冯翊县","韩城县","郃阳县","澄城县","白水县"]},
+    {n:"凤翔府",x:810,y:432,imp:true,co:["雍县","虢县","郿县","岐山县","麟游县","普润县"], sp:"西凤酒（原产地）、凤翔木版年画、彩绘泥塑",de:"关中西门，陇右东来第一大郡。"},
+    {n:"邠州",x:800,y:412,co:["新平县","三水县","宜禄县","永寿县"]}
+   ]
+  },
+  {
+   name:"都畿道", color:"#d35400", cx:932, cy:402,
+   geo:"伊洛河谷，天下之中。西阻函崤之险，东出则平原千里，漕粮半天下由此入太仓。",
+   climate:"暖温带较关中温润，伊洛汇流，牡丹花期四月。冬无严寒，夏有酷暑。",
+   folk:"牡丹盛会、龙门礼佛、周公庙祭、洛浦祓禊。洛中名士云集，诗酒风流甲于天下。",
+   slang:"河洛官话近于雅言，称“中”为好，“弄啥嘞”为做什么。",
+   sects:"洛阳为天下之中，帮会立脚者众，“洛帮”控漕运码头。白马寺、少林寺近在咫尺，武僧与游侠往来。",
+   food:"洛阳水席二十四道、不翻汤、浆面条、牡丹饼、胡辣汤。",
+   history:"九朝古都，神都繁华甲天下。永嘉之乱、安史之乱两度焚城，“若问古今兴废事，请君只看洛阳城”。",
+   d:"M876,392 L900,392 L962,384 L962,448 L938,456 L898,442 L896,402 Z",
+   states:[
+    {n:"河南府",x:930,y:424,imp:true,co:["河南县","洛阳县","偃师县","缑氏县","新安县","巩县","渑池县","福昌县","伊阙县","寿安县","永宁县","河清县"], sp:"洛阳牡丹、水席、唐三彩、杜康酒、澄泥砚",
+     de:"东都，宫阙与西都并称，牡丹甲于天下。",
+     st:"谷雨前后花开如潮。某年一朵并蒂黑紫，权贵争购至百金，花匠当夜携种南逃，此后黑紫绝种。"},
+    {n:"陕州",x:902,y:414,co:["陕县","灵宝县","阌乡县","硖石县"]},
+    {n:"汝州",x:918,y:448,co:["梁县","郏城县","龙兴县","临汝县","襄城县"]}
+   ]
+  },
+  {
+   name:"关内道", color:"#e67e22", cx:470, cy:268,
+   geo:"河套以南、白于山以北，半农半牧。马政所在，盐州青盐岁供边军，胡汉杂处，土广而劲。",
+   climate:"中温带半干旱，风沙大，冬长夏短。河套平原得黄河之利，故称“黄河百害唯富一套”。",
+   folk:"信天游、祭敖包（边民）、拜成吉思汗陵。汉蒙杂处，游牧与农耕交错。",
+   slang:"陕北鼻音重，“甚”为什么，“圪蹴”为蹲，“瓷实”为结实。",
+   sects:"边军将门、盐商帮会、马帮绿林。河套“套马帮”行商万里，绿林响马出没毛乌素。",
+   food:"羊肉、莜面、黄馍馍、酸粥、砖茶、沙葱。",
+   history:"秦汉北逐匈奴筑朔方，唐置六胡州。历代边防重地，“但使龙城飞将在，不教胡马度阴山”，多少将士埋骨于此。",
+   d:"M240,195 L600,160 L700,285 L692,408 L638,328 L430,360 L240,340 Z",
+   states:[
+    {n:"灵州",x:625,y:310,imp:true,co:["回乐县","灵武县","怀远县","保静县","鸣沙县"], sp:"枸杞、甘草、滩羊皮、发菜、灵武长枣",de:"河套重镇，朔方节度使驻地。"},
+    {n:"夏州",x:600,y:278,co:["朔方县","德静县","宁朔县"]},
+    {n:"延州",x:690,y:330,imp:true,co:["肤施县","延川县","延长县","门山县","丰林县","金明县","敷政县"], sp:"小米、红枣、剪纸、信天游、擀毡"},
+    {n:"庆州",x:620,y:355,co:["顺化县","合水县","华池县","乐蟠县","马岭县"]},
+    {n:"鄜州",x:668,y:362,co:["洛交县","洛川县","三川县","直罗县","甘泉县"]},
+    {n:"盐州",x:560,y:300,co:["五原县","兴宁县"]},
+    {n:"银州",x:620,y:285,co:["儒林县","抚宁县"]},
+    {n:"绥州",x:650,y:300,co:["龙泉县","城平县","延福县"]},
+    {n:"丹州",x:680,y:390,co:["义川县","云岩县"]},
+    {n:"会州",x:400,y:348,co:["会宁县","乌兰县"]},
+    {n:"宥州",x:560,y:270,co:["长泽县"]}
+   ]
+  },
+  {
+   name:"河东道", color:"#d4a017", cx:720, cy:246,
+   geo:"汾水纵贯，表里山河：西则黄河带绕，东则太行屏列。地狭人稠，世出良相皇后，盐铁之利半公室。",
+   climate:"温带大陆性，东太行西吕梁，汾河纵贯。冬寒夏暖，产麦黍稷，煤炭蕴藏最丰。",
+   folk:"晋祠圣母、关帝庙、后土祠、大槐树祭祖。晋人善贾重信义，票号镖局遍天下。",
+   slang:"晋语入声多，“咋咧”为怎么了，“圪蛋”为团，“闹不成”为不行。",
+   sects:"晋商票号护院武师成派，形意拳源于此。太行山有绿林，吕梁有响马。",
+   food:"刀削面、过油肉、老陈醋、汾酒、平遥牛肉、黄米凉糕。",
+   history:"尧都平阳，叔虞封唐。晋商称雄五百年，汇通天下。然元末明初大槐树移民，百万生民离乡，骨肉分离之痛至今传颂。",
+   d:"M600,160 L820,120 L798,250 L848,275 L798,330 L798,396 L692,408 L700,285 Z",
+   states:[
+    {n:"太原府",x:820,y:310,imp:true,co:["太原县","晋阳县","阳曲县","榆次县","盂县","祁县","太谷县","清源县","寿阳县","乐平县","交城县"], sp:"汾酒、老陈醋、刀削面、晋祠大米、铁棍山药",
+     de:"北都，城跨汾水，唐室龙兴之地。",
+     st:"城堞上有旧箭痕，老兵指曰：此前朝乱军所留，擦痕者不生冻疮——少年皆摸之。"},
+    {n:"潞州",x:862,y:318,co:["上党县","长子县","屯留县","壶关县","潞城县","襄垣县","黎城县"]},
+    {n:"泽州",x:864,y:348,co:["晋城县","阳城县","沁水县","高平县","陵川县"]},
+    {n:"晋州",x:822,y:358,co:["临汾县","洪洞县","岳阳县","襄陵县","神山县"]},
+    {n:"河中府",x:806,y:384,imp:true,co:["河东县","虞乡县","永乐县","猗氏县","万泉县","龙门县","临晋县","宝鼎县"], sp:"蒲州青柿、黄河鲤鱼、桑落酒、蒲津铁器",de:"黄河金三角，蒲津铁牛浮桥所在。"},
+    {n:"绛州",x:842,y:378,co:["正平县","曲沃县","太平县","稷山县","绛邑县","垣县"]},
+    {n:"代州",x:798,y:296,co:["雁门县","崞县","五台县","繁畤县","唐林县"]},
+    {n:"忻州",x:806,y:328,co:["秀容县","定襄县"]},
+    {n:"汾州",x:806,y:352,co:["西河县","孝义县","介休县","平遥县","灵石县"]},
+    {n:"辽州",x:838,y:296,co:["辽山县","和顺县","榆社县"]},
+    {n:"沁州",x:830,y:330,co:["沁源县","绵上县","和川县"]},
+    {n:"岚州",x:812,y:290,co:["宜芳县","合河县","静乐县"]},
+    {n:"石州",x:800,y:368,co:["离石县","平夷县","定胡县"]},
+    {n:"隰州",x:798,y:378,co:["隰川县","大宁县","永和县"]}
+   ]
+  },
+  {
+   name:"燕云十六州", color:"#c9a06b", cx:906,cy:178,
+   geo:"长城内外，农耕与游牧交界。昔年割弃，遂为异域；旧朝堡砦半没于草，南望王师者世代不绝。",
+   climate:"暖温带半湿润，燕山阻北寒，永定河冲积。冬寒夏热，春多风沙。",
+   folk:"拜妈祖（漕运）、城隍庙、关帝。胡汉杂处百年，风俗兼南北，近胡服骑射。",
+   slang:"幽州话近于北音，儿化多，“嘛”为什么，“遛弯”为散步。",
+   sects:"南北要冲，辽宋帮会交错。“幽燕豪客”重然诺轻生死，燕山有绿林。",
+   food:"涮羊肉、豆汁、焦圈、驴打滚、烧麦、果脯。",
+   history:"石敬瑭割让十六州，汉家北门户洞开数百年。父老南望王师，世代藏旧朝旌节，为华夏心口难愈之疤。",
+   d:"M820,120 L985,112 L1100,128 L1120,205 L1080,255 L1040,280 L998,300 L960,325 L870,315 L848,275 L798,250 Z",
+   states:[
+    {n:"燕山府",x:940,y:282,imp:true,co:["蓟县","幽都县","潞县","良乡县","昌平县","永清县","武清县"], sp:"果脯、涮羊肉、茯苓饼、景泰蓝、内画鼻烟壶",
+     de:"古幽州，北门锁钥，今为异族南京。",
+     st:"失地父老南望年复一年。有猎户世代藏旧朝旌节，临死传子：王师北上日，以此为号。"},
+    {n:"云中府",x:876,y:262,co:["云中县","天成县","长青县"]},
+    {n:"蔚州",x:904,y:252,co:["灵丘县","飞狐县","安边县"]},
+    {n:"应州",x:884,y:240,co:["金城县","浑源县"]},
+    {n:"朔州",x:856,y:266,co:["善阳县","马邑县"]},
+    {n:"武州",x:928,y:266,co:["文德县"]},
+    {n:"新州",x:968,y:268,co:["永兴县"]},
+    {n:"妫州",x:906,y:300,co:["怀戎县"]},
+    {n:"儒州",x:924,y:304,co:["缙山县"]},
+    {n:"檀州",x:964,y:300,co:["密云县"]},
+    {n:"蓟州",x:990,y:296,co:["渔阳县","三河县"]}
+   ]
+  },
+  {
+   name:"辽东", color:"#95a5a6", cx:1040,cy:152,
+   geo:"辽水以东，苦寒多雪，山林千里。本朝声教久不至，羁縻而已。",
+   climate:"中温带，长白山林海苦寒，辽河平原沃野。无霜期短，冬长夏短。",
+   folk:"萨满跳神、祭长白山神、放山采参有严格规矩。汉、契丹、女真杂处。",
+   slang:"辽东话直爽，“嘎哈”为干什么，“整”为弄，“贼拉”为特别。",
+   sects:"参帮、马帮、猎户帮会。长白山“放山”规矩世代相传，违者逐出山林。",
+   food:"酸菜炖粉条、杀猪菜、锅包肉、人参鸡、烧刀子、冻梨。",
+   history:"汉置四郡，唐安东都护府。高句丽、渤海迭兴。屡为边患亦屡被征伐，白骨蔽野，唯长白山千年沉默。",
+   d:"M990,196 L1060,160 L1096,196 L1060,244 L1016,252 L1000,232 Z",
+   states:[
+    {n:"辽阳府",x:1034,y:220,co:["辽阳县","鹤野县"]},
+    {n:"沈州",x:1052,y:204,co:["乐郊县"]}
+   ]
+  },
+  {
+   name:"河北道", color:"#a8b02c", cx:912,cy:348,
+   geo:"河朔平原，户口蕃息，州县城坞相望。世家大族坞堡林立，北接失地，士马强而风俗劲。",
+   climate:"暖温带半湿润，华北平原，黄河故道多沙。春旱秋涝，盐碱地广布。",
+   folk:"拜妈祖、关帝、药王、妈祖。燕赵多慷慨悲歌之士，河朔民风劲悍。",
+   slang:"冀鲁官话，“嘛”什么，“得劲”舒服，“中”好。",
+   sects:"河朔藩镇旧部、漕帮、盐枭。沧州武术之乡，“镖不喊沧”，江湖人过沧州不敢张声势。",
+   food:"驴肉火烧、煎饼馃子、贴饼子熬小鱼、沧州冬菜、衡水老白干。",
+   history:"燕赵古都，邯郸学步、将相和。唐末河朔三镇割据百年，宋辽边境百姓苦于兵燹，“可怜无定河边骨，犹是春闺梦里人”。",
+   d:"M798,330 L848,275 L870,315 L960,325 L1030,322 L1045,352 L1032,380 L1000,388 L985,395 L960,395 L880,396 L868,356 L798,396 Z",
+   states:[
+    {n:"大名府",x:922,y:362,imp:true,co:["元城县","大名县","魏县","南乐县","内黄县","成安县"], sp:"小磨香油、二毛烧鸡、郭八火烧、五百居香肠",
+     de:"北京，控扼河朔，魏博旧镇。",
+     st:"门楼上的铜铃无风自鸣三日，次日边报至：北骑破关。"},
+    {n:"真定府",x:868,y:372,imp:true,co:["真定县","井陉县","获鹿县","栾城县","平山县","行唐县","灵寿县","元氏县","赞皇县"], sp:"扒鸡、马家卤鸡、正定烧饼、郝家排骨"},
+    {n:"定州",x:888,y:342,co:["安喜县","无极县","曲阳县","唐县","新乐县","望都县"]},
+    {n:"邢州",x:848,y:380,co:["邢台县","内丘县","沙河县","巨鹿县","尧山县","平乡县"]},
+    {n:"沧州",x:966,y:340,co:["清池县","盐山县","南皮县","长芦县","饶安县","无棣县"]},
+    {n:"冀州",x:904,y:380,co:["信都县","南宫县","枣强县","武邑县","衡水县"]},
+    {n:"赵州",x:856,y:350,co:["平棘县","高邑县","临城县","柏乡县","宁晋县","隆平县"]},
+    {n:"博州",x:948,y:378,co:["聊城县","堂邑县","博平县","清平县"]},
+    {n:"德州",x:980,y:358,co:["安德县","平原县","长河县","将陵县"]},
+    {n:"棣州",x:1002,y:372,co:["厌次县","商河县","阳信县"]},
+    {n:"滨州",x:1010,y:390,co:["渤海县","招安县"]},
+    {n:"恩州",x:880,y:394,co:["清河县","清阳县","武城县"]},
+    {n:"磁州",x:836,y:396,co:["滏阳县","邯郸县","武安县"]},
+    {n:"雄州",x:905,y:328,co:["归信县","容城县"]},
+    {n:"霸州",x:936,y:322,co:["文安县","大城县"]}
+   ]
+  },
+  {
+   name:"河南道", color:"#52a564", cx:1024,cy:400,
+   geo:"黄河以南、淮水以北，平原广袤，青齐负海。海盐铁冶之利甲于诸道，士知诗书，民务耕桑。",
+   climate:"暖温带，黄淮平原，黄河夺淮之患。四季分明，产麦豆棉花。",
+   folk:"拜中岳嵩高、龙门大佛、少林寺。中原为华夏正朔，重礼义尚节烈。",
+   slang:"中原官话，“中”好，“弄”做，“孬”坏，“排场”为体面。",
+   sects:"少林、漕帮、盐枭。开封为水陆都会，帮会林立，相国寺旁有行伍人聚集。",
+   food:"胡辣汤、烩面、灌汤包、牡丹燕菜、道口烧鸡、汴京烤鸭。",
+   history:"得中原者得天下。汴京百万户，清明上河图之盛。然靖康之变二帝北狩，中原沦丧，千古之耻；黄河决口无数，民不聊生。",
+   d:"M962,384 L985,372 L1010,352 L1055,360 L1078,374 L1072,402 L1052,418 L1032,432 L1016,448 L980,452 L962,448 Z",
+   states:[
+    {n:"开封府",x:964,y:414,imp:true,co:["祥符县","开封县","陈留县","封丘县","尉氏县","雍丘县","中牟县","阳武县","长垣县","东明县","扶沟县","鄢陵县"], sp:"灌汤包、桶子鸡、汴绣、朱仙镇木版年画、鲤鱼焙面",
+     de:"汴河之上，漕船首尾相接，旧为东都。",
+     st:"旧岁除夕禁中忽闻喧声，帝登楼望，万家灯火接天，笑谓左右：朕在天宫乎？"},
+    {n:"应天府",x:980,y:446,imp:true,co:["宋城县","宁陵县","柘城县","谷熟县","下邑县","虞城县","楚丘县"], sp:"宋绣、张弓酒、胡辣汤、归德酱菜",de:"古宋州，陪都。"},
+    {n:"青州",x:1006,y:386,imp:true,co:["益都县","临淄县","寿光县","千乘县","博兴县","临朐县"], sp:"青州蜜桃、银瓜、全蝎、云门陈酿、柿霜饼",
+     st:"雪盐洁白，海边盐田如万千明镜。盐商最重一个“信”字，一诺之价，重于盐引。"},
+    {n:"齐州",x:986,y:404,co:["历城县","章丘县","临邑县","长清县","禹城县"]},
+    {n:"兖州",x:1000,y:424,co:["瑕丘县","曲阜县","泗水县","龚丘县","莱芜县"]},
+    {n:"徐州",x:1016,y:442,imp:true,co:["彭城县","沛县","丰县","萧县","滕县","宿迁县"], sp:"鼋汁狗肉、小儿酥、羊角蜜、烙馍、窑湾绿豆烧",
+     st:"九州通衢，百战之地。城下煤铁百年不竭，铁匠奉老君，夜半炉光映红半城。"},
+    {n:"郓州",x:976,y:428,co:["须城县","寿张县","东阿县","平阴县","阳谷县"]},
+    {n:"曹州",x:960,y:436,co:["济阴县","乘氏县","南华县","冤句县"]},
+    {n:"沂州",x:1030,y:414,co:["临沂县","费县","新泰县"]},
+    {n:"密州",x:1036,y:392,co:["诸城县","高密县","莒县"]},
+    {n:"莱州",x:1026,y:390,co:["掖县","胶水县","即墨县"]},
+    {n:"登州",x:1050,y:384,co:["蓬莱县","黄县","牟平县","文登县"]},
+    {n:"濮州",x:948,y:448,co:["鄄城县","雷泽县","临濮县"]},
+    {n:"宿州",x:990,y:462,co:["符离县","蕲县","临涣县"]},
+    {n:"亳州",x:956,y:466,co:["谯县","卫真县","城父县","永城县"]},
+    {n:"海州",x:1014,y:446,co:["朐山县","东海县","沭阳县"]},
+    {n:"泗州",x:992,y:478,co:["临淮县","涟水县"]}
+   ]
+  },
+  {
+   name:"山南道", color:"#16a085", cx:700,cy:428,
+   geo:"秦岭、大巴之间，汉水东流。地狭而险，栈道千里，为巴蜀与关中之噤喉；林深多药，女男皆辛苦。",
+   climate:"北亚热带，秦巴山地汉水东流。温润多雨云雾多，山间小气候各异。",
+   folk:"拜真武大帝、武当山、汉水龙王。山民悍勇好巫，端午赛龙舟。",
+   slang:"西南官话雏形，“郎个”怎么，“莫”别，“搞么事”做什么。",
+   sects:"武当派、汉水艄公帮、荆襄流民帮会。终南、武当为武林圣地。",
+   food:"热干面（荆襄）、腊肉、黄酒、魔芋、武当素菜、襄樊牛杂。",
+   history:"汉水中游楚汉相争。夫人城千古传。南宋襄阳保卫战六年，城破而宋亡，郭靖守襄阳之说亦源于此。",
+   d:"M560,448 L620,428 L692,408 L798,396 L798,440 L840,450 L830,492 L790,500 L640,492 L560,470 Z",
+   states:[
+    {n:"襄州",x:806,y:464,imp:true,co:["襄阳县","邓城县","谷城县","宜城县","南漳县","中庐县"], sp:"襄阳大头菜、孔明菜、黄酒、牛油面、缠蹄",
+     de:"江汉巨镇，城高池深。",
+     st:"夫人城一段为昔年贵妇率婢所筑，至今妇人登城，不许军士说笑。"},
+    {n:"邓州",x:782,y:456,co:["穰县","南阳县","内乡县","新野县","菊潭县","淅川县"]},
+    {n:"兴元府",x:660,y:448,co:["南郑县","城固县","褒城县","西县","三泉县"],de:"汉中盆地，巴蜀北门。"},
+    {n:"金州",x:714,y:466,co:["西城县","洵阳县","平利县","汉阴县","石泉县"]},
+    {n:"商州",x:770,y:436,co:["上洛县","商洛县","丰阳县","上津县"]},
+    {n:"均州",x:770,y:478,co:["武当县","郧乡县"]},
+    {n:"房州",x:730,y:484,co:["房陵县","永清县","竹山县"]}
+   ]
+  },
+  {
+   name:"淮南道", color:"#2980b9", cx:896,cy:456,
+   geo:"江淮之间，运河纵贯。盐漕命脉所系，东南税赋尽出于此；陂塘棋布，鱼稻丰，风俗轻扬。",
+   climate:"北亚热带湿润，淮河长江之间水网密布。梅雨伏旱，稻麦两熟。",
+   folk:"拜妈祖、龙王、灶神、都天。淮扬风俗奢靡好宴饮，画舫笙歌彻夜。",
+   slang:"江淮官话，“侬”你（部分），“作啥”做什么，“乖乖隆地咚”为惊叹。",
+   sects:"漕帮（天下第一大帮）、盐商帮会、扬州瘦马馆、青帮雏形。",
+   food:"淮扬菜、扬州炒饭、狮子头、盐水鹅、蟹黄汤包、碧螺春茶。",
+   history:"淮扬为漕运咽喉，盐商富可敌国，“腰缠十万贯骑鹤上扬州”。隋炀帝开运河三幸江都而亡。宋金对峙淮南为前线，“暖风熏得游人醉，直把杭州作汴州”。",
+   d:"M840,450 L898,442 L938,456 L980,452 L1016,448 L1024,492 L988,512 L905,514 L878,498 L826,500 Z",
+   states:[
+    {n:"扬州",x:906,y:472,imp:true,co:["江都县","扬子县","高邮县","六合县","海陵县","天长县"], sp:"扬州炒饭、狮子头、蟹粉小笼、酱菜、三把刀",
+     de:"东南都会，盐铁转运使治所，夜市千灯。",
+     st:"腰缠十万贯，骑鹤上扬州。月明夜二十四桥箫声不绝，富商船中斗茶，一饼小龙团可易良田十亩。"},
+    {n:"楚州",x:958,y:458,co:["山阳县","盐城县","宝应县","盱眙县","淮阴县"]},
+    {n:"庐州",x:936,y:498,co:["合肥县","慎县","巢县","庐江县"]},
+    {n:"寿州",x:894,y:496,co:["寿春县","安丰县","霍丘县","盛唐县"]},
+    {n:"和州",x:984,y:490,co:["历阳县","乌江县","含山县"]},
+    {n:"滁州",x:966,y:484,co:["清流县","全椒县","永阳县"]},
+    {n:"濠州",x:924,y:454,co:["钟离县","定远县","招义县"]},
+    {n:"光州",x:866,y:504,co:["定城县","固始县","光山县","仙居县"]},
+    {n:"黄州",x:852,y:490,co:["黄冈县","麻城县","黄陂县"]},
+    {n:"蕲州",x:878,y:514,co:["蕲春县","广济县","黄梅县"]},
+    {n:"安州",x:830,y:498,co:["安陆县","应城县","云梦县","应山县"]}
+   ]
+  },
+  {
+   name:"江南东道", color:"#3b6fb5", cx:952,cy:512,
+   geo:"大江以南至于沧海，太湖如镜，海塘千里。财赋甲于天下，人文最盛，舟楫之利通乎异域。",
+   climate:"中亚热带湿润，太湖平原东南丘陵。梅雨绵长，夏末台风，四季常青。",
+   folk:"拜妈祖、观音、保生大帝（闽）、城隍。崇文重教，耕读传家，宗族势力强。",
+   slang:"吴语、闽语八闽不同音。吴语“侬”你，“弗”不；闽语“食”吃，“阮”我。",
+   sects:"江南文士社、盐帮、海商（泉州、明州）。东林、复社雏形；武林有姑苏慕容（附会）、南少林。",
+   food:"苏菜、闽菜、小笼包、松鼠桂鱼、佛跳墙、龙井虾仁、碧螺春、桂花糖藕。",
+   history:"衣冠南渡，经济重心南移，“苏湖熟天下足”。然倭寇屡犯东南沿海，烧杀劫掠；明初海禁，商船不通，海疆不宁。",
+   d:"M884,512 L988,500 L1014,540 L1004,590 L992,620 L1000,672 L982,696 L936,700 L908,668 L898,620 L880,560 L878,514 Z",
+   states:[
+    {n:"苏州",x:920,y:546,imp:true,co:["吴县","长洲县","昆山县","常熟县","华亭县"], sp:"苏绣、碧螺春、松鼠桂鱼、苏式糕点、丝绸",
+     de:"太湖明珠，丝织甲天下。",
+     st:"“苏湖熟，天下足。”松江鲈鱼不过四鳃，赝品满市；老饕只看鳃边一点朱砂痕。"},
+    {n:"杭州",x:944,y:578,imp:true,co:["钱塘县","仁和县","余杭县","盐官县","於潜县","新城县","昌化县","富阳县"], sp:"西湖龙井、西湖醋鱼、绸伞、杭扇、桂花糖藕",
+     de:"东南形胜，三秋桂子，十里荷花。",
+     st:"金主闻柳词“三秋桂子”，遂起投鞭渡江之志。故老戒子孙：好词亦能招兵。"},
+    {n:"润州",x:910,y:524,co:["丹徒县","丹阳县","金坛县","延陵县"]},
+    {n:"昇州",x:898,y:540,imp:true,co:["江宁县","句容县","溧水县","溧阳县"], sp:"板鸭、雨花茶、云锦、盐水鸭、雨花石",
+     de:"金陵，六朝旧都，王气所钟。",
+     st:"乌衣巷口老燕不惧人。士子题名壁上，未第者来年多来抚墙再看。"},
+    {n:"常州",x:930,y:538,co:["晋陵县","无锡县","义兴县","江阴县"]},
+    {n:"湖州",x:932,y:566,co:["乌程县","安吉县","长兴县","德清县","武康县"]},
+    {n:"越州",x:972,y:578,co:["会稽县","山阴县","诸暨县","余姚县","剡县","萧山县","上虞县"]},
+    {n:"明州",x:980,y:558,co:["鄞县","慈溪县","奉化县","定海县","象山县"]},
+    {n:"婺州",x:958,y:596,co:["金华县","义乌县","永康县","东阳县","兰溪县"]},
+    {n:"温州",x:952,y:622,co:["永嘉县","瑞安县","乐清县","平阳县"]},
+    {n:"台州",x:964,y:598,co:["临海县","黄岩县","天台县","宁海县"]},
+    {n:"睦州",x:920,y:590,co:["建德县","桐庐县","淳安县","遂安县"]},
+    {n:"歙州",x:902,y:572,co:["歙县","休宁县","黟县","婺源县","绩溪县"]},
+    {n:"福州",x:932,y:648,co:["闽县","侯官县","长乐县","福清县","连江县"]},
+    {n:"泉州",x:930,y:664,co:["晋江县","南安县","同安县","莆田县"]},
+    {n:"建州",x:905,y:624,co:["建安县","建阳县","邵武县"]},
+    {n:"漳州",x:914,y:682,co:["漳浦县","龙溪县"]},
+    {n:"汀州",x:898,y:648,co:["长汀县","宁化县"]}
+   ]
+  },
+  {
+   name:"江南西道", color:"#6c5ce7", cx:824,cy:520,
+   geo:"赣水流域，三面环山、北阻大江。瓷茶纸之利走天下，山田层叠，俗好儒而俭。",
+   climate:"中亚热带湿润，鄱阳湖洞庭湖平原。梅雨伏旱，水网稠密。",
+   folk:"拜傩神、妈祖、许真君。江西填湖广移民之风盛，族谱文化发达。",
+   slang:"赣语、湘语。湘语“么子”什么，“恰饭”吃饭，“霸蛮”为固执。",
+   sects:"龙虎山天师道、丐帮分舵、赣商帮会、湘军火枪队雏形。",
+   food:"赣菜（辣）、湘菜（酸辣）、瓦罐汤、米粉、臭豆腐、剁椒鱼头。",
+   history:"湖广熟天下足。元末陈友谅与朱元璋大战鄱阳湖，血染湖水三十里。湘军近代崛起，“无湘不成军”。",
+   d:"M800,514 L880,514 L878,560 L884,600 L855,640 L800,648 L790,574 Z",
+   states:[
+    {n:"洪州",x:834,y:556,imp:true,co:["南昌县","新建县","丰城县","分宁县","武宁县","建昌县","奉新县"], sp:"瓦罐汤、米粉、藜蒿炒腊肉、李渡酒、进贤毛笔",
+     de:"豫章故郡，都督府所在。",
+     st:"滕王阁宴，才子即席作序，都督初怒，至“秋水长天”一句，叹曰：此真天才。"},
+    {n:"江州",x:866,y:524,co:["浔阳县","德安县","都昌县","彭泽县"]},
+    {n:"饶州",x:872,y:556,co:["鄱阳县","余干县","乐平县","浮梁县","德兴县"]},
+    {n:"信州",x:858,y:592,co:["上饶县","贵溪县","弋阳县","铅山县"]},
+    {n:"抚州",x:840,y:600,co:["临川县","南丰县","崇仁县","宜黄县"]},
+    {n:"吉州",x:814,y:596,co:["庐陵县","吉水县","泰和县","永新县","安福县"]},
+    {n:"袁州",x:800,y:620,co:["宜春县","萍乡县","新喻县"]},
+    {n:"虔州",x:828,y:642,co:["赣县","雩都县","虔化县","南康县","信丰县"]}
+   ]
+  },
+  {
+   name:"荆楚道", color:"#8e44ad", cx:752,cy:492,
+   geo:"江汉云梦，洞庭潇湘。北抵襄樊之险，南控岭表之口，江湖南北凑集，稻蟹鱼莲称天府。",
+   climate:"北亚热带，江汉平原云梦泽遗。梅雨伏旱，水患频仍，“万里长江险在荆江”。",
+   folk:"拜屈原、楚庄王、龙王、关帝。楚地信巫鬼重淫祀，端午赛龙舟、投粽祭屈子。",
+   slang:"西南官话武天片，“么斯”什么，“过早”吃早饭，“灵醒”为整洁。",
+   sects:"荆襄流民帮、汉口码头帮、江汉艄公。古称绿林，新莽末年绿林起义起于此。",
+   food:"热干面、豆皮、鸭脖、武昌鱼、洪湖藕汤、孝感米酒。",
+   history:"楚虽三户亡秦必楚。三国荆州四战之地，关羽大意失荆州。明末张献忠、李自成转战于此；湖广填四川，多少骨肉分离。",
+   d:"M640,498 L692,490 L790,500 L878,498 L880,514 L850,530 L800,540 L790,560 L790,608 L800,630 L700,640 L685,620 L690,566 L650,552 Z",
+   states:[
+    {n:"江陵府",x:730,y:532,imp:true,co:["江陵县","枝江县","公安县","松滋县","石首县","监利县"], sp:"千张扣肉、鱼糕、荆州漆器、郢酒、朱砂笔",
+     de:"古荆州，南国巨镇，北都南来第一城。",
+     st:"沙市码头舟子认滩声行船，黑夜里听浪便知何处湾。"},
+    {n:"鄂州",x:800,y:528,imp:true,co:["江夏县","武昌县","汉阳县","蒲圻县"], sp:"武昌鱼、热干面、鸭脖、梁子湖大闸蟹、洪山菜薹",de:"江汉汇流，东南巨镇。"},
+    {n:"潭州",x:748,y:596,imp:true,co:["长沙县","善化县","醴陵县","浏阳县","湘潭县","湘乡县","益阳县","宁乡县"], sp:"臭豆腐、剁椒鱼头、湘绣、白沙液、浏阳花炮",
+     st:"岳麓书院朱张会讲，马饮池水皆涸。士子至今以“会讲日不占座”为耻。"},
+    {n:"岳州",x:772,y:520,co:["巴陵县","华容县","临湘县","沅江县"]},
+    {n:"鼎州",x:740,y:564,co:["武陵县","龙阳县","桃源县"]},
+    {n:"澧州",x:706,y:552,co:["澧阳县","安乡县","石门县","慈利县"]},
+    {n:"衡州",x:766,y:620,co:["衡阳县","衡山县","耒阳县","常宁县"]},
+    {n:"永州",x:718,y:616,co:["零陵县","祁阳县","东安县"]},
+    {n:"道州",x:742,y:632,co:["营道县","江华县","永明县"]},
+    {n:"郴州",x:790,y:614,co:["郴县","桂阳县","宜章县","永兴县"]},
+    {n:"邵州",x:708,y:596,co:["邵阳县","武冈县"]},
+    {n:"归州",x:698,y:510,co:["秭归县","巴东县","兴山县"]},
+    {n:"峡州",x:722,y:500,co:["夷陵县","远安县","长杨县"]}
+   ]
+  },
+  {
+   name:"剑南道", color:"#a04080", cx:630,cy:492,
+   geo:"剑阁之内，成都平原沃野千里。井盐、丝织、纸张之利走天下；外扼诸羌，内丰给，号“扬一益二”。",
+   climate:"亚热带湿润，四川盆地云雾多日照少。冬暖夏热，天府之国，岁无水旱。",
+   folk:"拜李冰、二郎神、川主、蜀王。川人好安逸，爱摆龙门阵，茶馆文化发达。",
+   slang:"西南官话成渝片，“巴适”舒服，“啥子”什么，“要得”好，“雄起”为加油。",
+   sects:"青城派、峨眉派、袍哥（哥老会）。川中武林名宿辈出，袍哥势力渗透城乡。",
+   food:"川菜麻辣、火锅、担担面、回锅肉、麻婆豆腐、五粮液、盖碗茶。",
+   history:"李冰治水，天府之国成。唐玄宗僖宗两度幸蜀避乱。宋末钓鱼城抗蒙三十六年，蒙哥殒命城下。然张献忠屠蜀，人口凋零十存一二，血泪斑斑。",
+   d:"M575,455 L640,492 L692,490 L650,552 L690,566 L700,600 L590,602 L560,552 Z",
+   states:[
+    {n:"成都府",x:638,y:536,imp:true,co:["成都县","华阳县","郫县","新都县","双流县","新繁县","广都县","温江县"], sp:"蜀锦、蜀绣、五粮液、担担面、火锅底料、蒙顶茶",
+     de:"益州，锦城花重，百业所凑。",
+     st:"浣花溪水造纸绝佳；薛涛笺以芙蓉为骨，价抵寸金，闺阁相争。"},
+    {n:"蜀州",x:668,y:532,co:["晋原县","青城县","唐兴县","新津县"]},
+    {n:"彭州",x:650,y:514,co:["九陇县","导江县","濛阳县"]},
+    {n:"汉州",x:670,y:552,co:["雒县","什邡县","绵竹县","德阳县"]},
+    {n:"绵州",x:690,y:514,co:["巴西县","昌明县","魏城县","罗江县"]},
+    {n:"梓州",x:688,y:568,co:["郪县","射洪县","通泉县","盐亭县"]},
+    {n:"阆州",x:692,y:544,co:["阆中县","南部县","苍溪县"]},
+    {n:"果州",x:666,y:582,co:["南充县","西充县","相如县"]},
+    {n:"嘉州",x:612,y:586,co:["龙游县","夹江县","峨眉县","犍为县"]},
+    {n:"眉州",x:624,y:572,co:["通义县","彭山县","青神县","丹棱县"]},
+    {n:"遂州",x:632,y:586,co:["方义县","长江县","蓬溪县"]},
+    {n:"陵州",x:654,y:594,co:["仁寿县","贵平县","井研县"]},
+    {n:"简州",x:650,y:562,co:["阳安县","金水县"]},
+    {n:"资州",x:686,y:596,co:["盘石县","资阳县","内江县"]}
+   ]
+  },
+  {
+   name:"陇右道", color:"#73a994", cx:500,cy:440,
+   geo:"陇山以西，河西走廊一线如绳，南隔诸羌、北断胡路。屯田相望，商旅出塞者皆请过所。",
+   climate:"中温带干旱，河西走廊绿洲棋布，祁连雪水灌溉。风沙大日照强，瓜果极甜。",
+   folk:"拜敦煌莫高窟佛、凉州贤孝、霍去病。汉回番杂处，风俗多元，佛教石窟艺术最盛。",
+   slang:"中原官话秦陇片，“尕”小，“攒劲”厉害，“么麻达”为没问题。",
+   sects:"骆驼客商帮、马帮、绿林响马。敦煌、张掖为商旅重镇，帮会控丝路。",
+   food:"牛肉面、手抓羊肉、浆水面、锁阳酒、瓜州蜜瓜、夜光杯葡萄酒。",
+   history:"张骞凿空，丝绸之路通；河西四郡断匈奴右臂。安史后没于吐蕃数百年隔绝。敦煌遗书为华夏瑰宝，亦为近代文物流失之痛。",
+   d:"M430,360 L638,328 L642,428 L445,450 Z",
+   states:[
+    {n:"秦州",x:560,y:424,imp:true,co:["上邽县","成纪县","陇城县","清水县"], sp:"花牛苹果、秦安花椒、雕漆、夜光杯、洮砚",de:"陇右东门，出关第一站。"},
+    {n:"渭州",x:524,y:406,co:["襄武县","陇西县","鄣县"]},
+    {n:"兰州",x:478,y:392,co:["五泉县","金城县"]},
+    {n:"凉州",x:442,y:378,imp:true,co:["姑臧县","神乌县","昌松县","番禾县"], sp:"凉州葡萄酒、夜光杯、瓜州蜜瓜、甘草、锁阳",
+     st:"七里十万家，胡人半解弹琵琶。边军出关必尽饮一碗葡萄酒，留碗于堞，还者取回。"}
+   ]
+  },
+  {
+   name:"西域", color:"#cbb682", cx:300,cy:414,
+   geo:"玉门之外，绿洲棋布，雪山横亘。四镇故地，羁縻而已；商队逾月不见城，烽堠为记。",
+   climate:"温带大陆性干旱，绿洲沙漠雪山交错。昼夜温差极大，“早穿皮袄午穿纱，围着火炉吃西瓜”。",
+   folk:"拜火教、佛教、伊斯兰教并存。胡旋舞、龟兹乐、于阗乐。汉胡杂处，商旅万国。",
+   slang:"西域诸国各有语，通用突厥语、粟特语。汉商多用唐言（汉语），译语人通译。",
+   sects:"商队护卫、绿洲城邦武装、沙漠马匪、粟特商团。",
+   food:"馕、抓饭、烤肉、葡萄干、葡萄酒、石榴、无花果。",
+   history:"汉置西域都护，唐安西四镇。丝绸之路东西通衢，商旅不绝，葡萄苜蓿入中土。然安史后断绝，中土不闻西域事千年，为盛世之憾。",
+   d:"M120,330 L460,320 L445,450 L175,495 Z",
+   states:[
+    {n:"西州",x:402,y:420,co:["高昌县","交河县","天山县","蒲昌县"]},
+    {n:"伊州",x:380,y:402,co:["伊吾县","柔远县","纳职县"]},
+    {n:"庭州",x:414,y:384,co:["金满县","轮台县","蒲类县"]},
+    {n:"甘州",x:340,y:382,co:["张掖县","删丹县"]},
+    {n:"肃州",x:290,y:376,co:["酒泉县","福禄县"]},
+    {n:"沙州",x:240,y:392,co:["敦煌县","寿昌县"]},
+    {n:"龟兹镇",x:280,y:430,co:["伊罗卢城"]},
+    {n:"于阗镇",x:250,y:470,co:["西山城"]},
+    {n:"疏勒镇",x:200,y:460,co:["迦师城"]},
+    {n:"碎叶镇",x:186,y:420,co:["碎叶城"]}
+   ]
+  },
+  {
+   name:"黔中道", color:"#795548", cx:700,cy:624,
+   geo:"武陵五溪，山高水急。羁縻州洞杂处，言语各异；辰砂、黄柏、生漆顺溪而下。",
+   climate:"亚热带湿润，云贵高原。“天无三日晴，地无三里平，人无三分银”，多雾多雨多山。",
+   folk:"拜傩神、祖先、自然崇拜（树、石、洞）。苗彝布依汉杂处，土司林立，银饰蜡染为业。",
+   slang:"西南官话+少数民族语。“朗个”怎么，“乖”漂亮，“打望”为看姑娘。",
+   sects:"土司武装、苗寨寨主、茶马帮、盐帮。山高皇帝远，各寨自治。",
+   food:"酸汤鱼、丝娃娃、折耳根、腊肉、米酒、糍粑。",
+   history:"夜郎自大，古滇国。诸葛亮南征七擒孟获。明清改土归流，血与火的融合；苗民起义屡起屡败，白骨盈山。",
+   d:"M590,602 L690,590 L790,568 L800,648 L790,668 L700,698 L600,672 Z",
+   states:[
+    {n:"黔州",x:656,y:646,co:["彭水县","黔江县","信宁县","都濡县"],de:"乌江咽喉，都督府羁縻五十州。"},
+    {n:"辰州",x:786,y:656,co:["沅陵县","溆浦县","辰溪县","泸溪县"]},
+    {n:"施州",x:726,y:656,co:["清江县","建始县"]},
+    {n:"溪州",x:758,y:662,co:["大乡县","三亭县"]},
+    {n:"锦州",x:750,y:678,co:["卢阳县","渭阳县"]},
+    {n:"思州",x:690,y:668,co:["务川县"]},
+    {n:"费州",x:630,y:666,co:["涪川县"]}
+   ]
+  },
+  {
+   name:"岭南道", color:"#e8839f", cx:838,cy:636,
+   geo:"五岭以南，滨海多港。瘴雨蛮烟，四时皆夏；宝货所聚，番舶通乎数十国。",
+   climate:"南亚热带至热带，五岭以南滨海。四时皆夏，瘴雨蛮烟，台风频仍。",
+   folk:"拜妈祖、北帝、冼夫人、龙母。百越遗风，重鬼神好巫蛊，宗族械斗之风烈。",
+   slang:"粤语、客家话、闽语并存。粤语“乜”什么，“食饭”吃饭，“靓”漂亮。",
+   sects:"洪门（天地会）、广州十三行、海商、疍家帮、潮汕帮。岭南为反清复明渊薮。",
+   food:"粤菜、早茶、烧腊、凉茶、艇仔粥、客家酿豆腐、潮汕牛肉火锅。",
+   history:"南越国、南汉国割据。唐宋贬谪之地，苏轼“日啖荔枝三百颗，不辞长作岭南人”。近代通商口岸西学东渐。然瘴疠之苦、流人之悲，史书不绝。",
+   d:"M700,648 L790,668 L855,640 L898,620 L908,668 L936,700 L880,724 L760,730 L700,706 Z",
+   states:[
+    {n:"广州",x:852,y:684,imp:true,co:["南海县","番禺县","东莞县","增城县","清远县","怀集县","新会县"], sp:"广绣、广彩、凉茶、烧腊、荔枝、端砚",
+     de:"市舶使驻地，波斯胡商以胡椒压舱。",
+     st:"海珠石畔番舶如云。市舶使封关一夕，满城药铺先慌——没了乳香没药。"},
+    {n:"桂州",x:728,y:676,co:["始安县","灵川县","阳朔县","荔浦县"]},
+    {n:"邕州",x:772,y:704,co:["宣化县","朗宁县","武缘县"]},
+    {n:"潮州",x:900,y:676,co:["海阳县","潮阳县","程乡县"]},
+    {n:"端州",x:818,y:672,co:["高要县","四会县"]},
+    {n:"容州",x:810,y:710,co:["普宁县","北流县"]},
+    {n:"交州",x:720,y:714,co:["宋平县","龙编县"]},
+    {n:"韶州",x:880,y:668,co:["曲江县","乐昌县"]},
+    {n:"连州",x:792,y:672,co:["桂阳县","阳山县"]},
+    {n:"循州",x:856,y:692,co:["归善县","海丰县"]},
+    {n:"琼州",x:876,y:748,co:["琼山县","澄迈县","文昌县","临高县"]}
+   ]
+  }
+]};
+
+/* ================================================================
+   朝代切换：五朝合制底图，各朝疆域以"保有/失去"的道来体现
+   keep 为该朝实际领有的道；其余道灰显为「异域·失地」
+   ================================================================ */
+const DYNASTIES = [
+  {key:"jin",  name:"晋", title:"【晋】", years:"衣冠南渡 · 偏安江左",
+   keep:["山南道","淮南道","江南东道","江南西道","荆楚道","剑南道","黔中道","岭南道"],
+   desc:"中原板荡，衣冠南渡。版图蹙于半壁，唯保江淮以南、巴蜀荆楚、岭表之地，都于建康。中原父老南望王师，北伐之声不绝，终未成事。"},
+  {key:"han",  name:"汉", title:"【汉】", years:"全盛 · 凿空西域",
+   keep:["京畿道","都畿道","关内道","河东道","燕云十六州","辽东","河北道","河南道","山南道","淮南道","江南东道","江南西道","荆楚道","剑南道","陇右道","西域","黔中道","岭南道"],
+   desc:"海内一统，北逐匈奴，西通西域，东平辽东。自漠南至于岭南，自玉门至于沧海，皆为郡县，声教所被极盛，汉人之名由此立。"},
+  {key:"tang", name:"唐", title:"【唐】", years:"全盛 · 天可汗",
+   keep:["京畿道","都畿道","关内道","河东道","燕云十六州","辽东","河北道","河南道","山南道","淮南道","江南东道","江南西道","荆楚道","剑南道","陇右道","西域","黔中道","岭南道"],
+   desc:"承隋一统，拓土万里。安西、北庭节制西域，安东都护远及辽水。万邦来朝，胡汉一家，长安百万户，为华夏极盛之时。"},
+  {key:"song", name:"宋", title:"【宋】", years:"北宋 · 重文轻武",
+   keep:["京畿道","都畿道","关内道","河东道","河北道","河南道","山南道","淮南道","江南东道","江南西道","荆楚道","剑南道","黔中道","岭南道"],
+   desc:"陈桥兵变代周，统一南北。然燕云未复，辽东陷于契丹，陇右为西夏所据，西域久绝。积贫积弱，以岁币换和平，文治盛而武功衰。"},
+  {key:"ming", name:"明", title:"【明】", years:"全盛 · 驱逐胡虏",
+   keep:["京畿道","都畿道","关内道","河东道","燕云十六州","辽东","河北道","河南道","山南道","淮南道","江南东道","江南西道","荆楚道","剑南道","黔中道","岭南道"],
+   desc:"驱逐蒙元，恢复华夏。都于应天后迁北平，收复燕云，经营辽东，九边列镇。然西域为吐鲁番所阻，陇右渐成边地，不复汉唐之盛。"}
+];
+let currentDynasty = "han";
+function dynastyOf(){ return DYNASTIES.find(d=>d.key===currentDynasty) || DYNASTIES[1]; }
+function isLost(regionName){ return !dynastyOf().keep.includes(regionName); }
+
+/* ================================================================
+   状态 & 存取
+   ================================================================ */
+const LS_KEY = "worldview_map_v1";
+let DATA;
+try{
+  const saved = JSON.parse(localStorage.getItem(LS_KEY));
+  DATA = saved && saved.regions ? saved : structuredClone(DEFAULT_DATA);
+}catch(e){ DATA = structuredClone(DEFAULT_DATA); }
+let editing = false;
+let selected = null; // {type:"region"|"state", ri, si}
+let saveTimer = null;
+
+function scheduleSave(){
+  if(saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>{
+    localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+    const d = new Date();
+    document.getElementById("saveState").textContent =
+      "已自动保存 " + String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")+":"+String(d.getSeconds()).padStart(2,"0");
+  }, 400);
+}
+
+/* ================================================================
+   渲染
+   ================================================================ */
+const SVGNS = "http://www.w3.org/2000/svg";
+const layerRegions = document.getElementById("layerRegions");
+const layerSeams   = document.getElementById("layerSeams");
+const layerSel     = document.getElementById("layerSel");
+const layerGeo     = document.getElementById("layerGeo");
+const layerRLabels = document.getElementById("layerRLabels");
+const layerStates  = document.getElementById("layerStates");
+const layerSLabels = document.getElementById("layerSLabels");
+
+function el(tag, attrs){
+  const e = document.createElementNS(SVGNS, tag);
+  for(const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function render(){
+  layerRegions.innerHTML=""; layerSeams.innerHTML=""; layerSel.innerHTML="";
+  layerRLabels.innerHTML=""; layerStates.innerHTML=""; layerSLabels.innerHTML="";
+  DATA.regions.forEach((r, ri)=>{
+    const lost = isLost(r.name);
+    // 同色宽描边作光晕，覆盖拼接缝隙
+    const p = el("path",{d:r.d, fill:lost?"#b9b099":r.color, stroke:lost?"#b9b099":r.color, "stroke-width":6, class:"regionPath"+(lost?" lost":"")});
+    p.addEventListener("click",(e)=>{e.stopPropagation(); selectRegion(ri);});
+    layerRegions.appendChild(p);
+    // 白色细界缝
+    layerSeams.appendChild(el("path",{d:r.d,class:"seamLine"}));
+    // 选中红框
+    if(selected&&selected.type==="region"&&selected.ri===ri){
+      layerSel.appendChild(el("path",{d:r.d,fill:"none",stroke:"#a83c2a","stroke-width":2.4}));
+    }
+
+    const t = el("text",{x:r.cx,y:r.cy,class:"rlabel"+(lost?" lost":"")+"",fill:lost?"#6b6352":"#3d2b1a"});
+    t.textContent = lost ? r.name+"(异域)" : r.name;
+    layerRLabels.appendChild(t);
+
+    r.states.forEach((s, si)=>{
+      if(lost) return; // 失地不绘州点
+      const g = el("g",{class:"statedot"});
+      g.appendChild(el("circle",{cx:s.x,cy:s.y,r:s.imp?4.4:3,fill:"#2e2013"}));
+      if(s.imp) g.appendChild(el("circle",{cx:s.x,cy:s.y,r:6.6,fill:"none",stroke:"#f2c14e","stroke-width":1.3}));
+      g.addEventListener("click",(e)=>{e.stopPropagation(); selectState(ri,si);});
+      if(selected&&selected.type==="state"&&selected.ri===ri&&selected.si===si) g.classList.add("sel");
+      layerStates.appendChild(g);
+
+      if(s.imp){
+        const st2 = el("text",{x:s.x,y:s.y-8,class:"statelabel imp",fill:"#2e2013"});
+        st2.textContent = s.n;
+        layerSLabels.appendChild(st2);
+      }
+    });
+  });
+  renderGeo();
+  applyZoomLabels();
+  if(window.HistoryLayer) HistoryLayer.render();
+}
+
+/* 山川河流层 */
+function renderGeo(){
+  layerGeo.innerHTML="";
+  const add=(d,stroke,width,dash)=>layerGeo.appendChild(el("path",{
+    d,class:"geoLine",stroke,"stroke-width":width,"stroke-linecap":"round",
+    "stroke-dasharray":dash||"",opacity:0.9}));
+  // 黄河
+  add("M520,450 C545,420 565,392 585,362 C600,340 620,315 650,302 C685,288 730,284 762,292 C782,298 792,312 794,328 C796,370 798,390 800,400 L860,392 L962,384 C990,375 1008,358 1022,348","#5b7d9c",4);
+  // 长江
+  add("M480,518 C530,508 575,510 615,522 C650,532 680,540 710,543 C750,546 790,540 820,534 L870,524 C910,514 950,502 985,490 C1005,483 1020,478 1035,470","#5b7d9c",4);
+  // 大运河
+  add("M892,396 C905,430 918,460 912,492 C908,520 920,545 938,568 L945,580","#5b7d9c",2.4,"6 4");
+  // 长城
+  add("M560,358 C600,328 640,306 685,294 C730,283 790,274 848,272 L870,315 C905,308 940,306 970,300","#7a4526",2.6,"10 4");
+  // 山脉
+  const mts=[[880,296],[880,314],[880,332],          // 太行
+             [706,430],[730,427],[754,423],          // 秦岭
+             [672,474],[698,478],                    // 大巴
+             [836,614],[860,616],[884,612],          // 南岭
+             [958,548],[970,566],[980,586],          // 武夷
+             [322,286],[350,278],                    // 天山
+             [330,468],[358,460],                    // 昆仑
+             [1046,166],[700,250],[726,246]];        // 长白/阴山
+  mts.forEach(([x,y])=>{
+    layerGeo.appendChild(el("path",{d:`M${x},${y} l7,-12 l7,12 Z`,fill:"#6b4f2e",class:"geoLine"}));
+  });
+  const labels=[["太行山",894,292],["秦岭",712,450],["大巴山",660,498],["南岭",840,636],
+                ["武夷山",946,540],["天山",310,272],["昆仑山",312,492],["长白山",1058,158],
+                ["阴山",686,236],["黄河",648,278],["长江",748,568]];
+  labels.forEach(([s,x,y])=>{
+    const t=el("text",{x,y,"font-size":10,fill:"#6b4f2e",class:"geoLine"});t.textContent=s;layerGeo.appendChild(t);
+  });
+}
+
+/* 非重要州名按缩放级别显示 */
+function applyZoomLabels(){
+  const showAll = scale >= 1.55;
+  if(showAll && !layerSLabels.dataset.all){
+    DATA.regions.forEach((r,ri)=>r.states.forEach((s,si)=>{
+      if(s.imp) return;
+      const t=el("text",{x:s.x,y:s.y-7,class:"statelabel",fill:"#2e2013"});
+      t.textContent=s.n; t.dataset.ri=ri; t.dataset.si=si;
+      layerSLabels.appendChild(t);
+    }));
+    layerSLabels.dataset.all="1";
+  }else if(!showAll && layerSLabels.dataset.all){
+    layerSLabels.querySelectorAll("[data-ri]").forEach(n=>n.remove());
+    delete layerSLabels.dataset.all;
+  }
+}
+
+/* ================================================================
+   选择 & 侧栏
+   ================================================================ */
+function selectRegion(ri){ selected={type:"region",ri}; render(); renderPanel(); }
+function selectState(ri,si){ selected={type:"state",ri,si}; render(); renderPanel(); }
+
+const panel = document.getElementById("panel");
+function fieldHTML(label, inner, extra=""){
+  return `<div class="field" ${extra}><label>${label}</label>${inner}</div>`;
+}
+function renderPanel(){
+  if(!selected){
+    panel.innerHTML='<div class="empty">点击地图上的「道」或「州府」<br>在此查看地理与地方志故事</div>';
+    return;
+  }
+  const r = DATA.regions[selected.ri];
+  if(selected.type==="region"){
+    panel.innerHTML = `
+      <span class="badge">道 · 一级行政区</span>
+      <h2 content>${r.name}</h2>
+      ${fieldHTML("道名（可改）",`<input type="text" data-k="name" value="${esc(r.name)}" ${editing?"":"readonly"}>`)}
+      ${editing?fieldHTML("区域颜色",`<input type="color" data-k="color" value="${r.color}">`):""}
+      ${fieldHTML("地理描述",editing
+        ? `<textarea data-k="geo" rows="3">${esc(r.geo||"")}</textarea>`
+        : `<div class="geo-box">${esc(r.geo||"")}</div>`)}
+      ${fieldHTML("气候与物候",editing
+        ? `<textarea data-k="climate" rows="2">${esc(r.climate||"")}</textarea>`
+        : `<div class="geo-box">${esc(r.climate||"—")}</div>`)}
+      ${fieldHTML("民俗与信仰",editing
+        ? `<textarea data-k="folk" rows="2">${esc(r.folk||"")}</textarea>`
+        : `<div class="geo-box">${esc(r.folk||"—")}</div>`)}
+      ${fieldHTML("方言与黑话",editing
+        ? `<textarea data-k="slang" rows="2">${esc(r.slang||"")}</textarea>`
+        : `<div class="geo-box">${esc(r.slang||"—")}</div>`)}
+      ${fieldHTML("江湖门派与地方势力",editing
+        ? `<textarea data-k="sects" rows="3">${esc(r.sects||"")}</textarea>`
+        : `<div class="geo-box">${esc(r.sects||"—")}</div>`)}
+      ${fieldHTML("饮食与日常生活",editing
+        ? `<textarea data-k="food" rows="2">${esc(r.food||"")}</textarea>`
+        : `<div class="geo-box">${esc(r.food||"—")}</div>`)}
+      ${fieldHTML("历史伤疤与荣耀",editing
+        ? `<textarea data-k="history" rows="3">${esc(r.history||"")}</textarea>`
+        : `<div class="story-box">${esc(r.history||"—")}</div>`)}
+      ${fieldHTML(`下辖州府（${r.states.length}）`,
+        `<div class="stateList">${r.states.map((s,i)=>`<span class="county-chip" data-go="${i}">${esc(s.n)}</span>`).join("")}</div>`)}
+      ${editing?`<button class="addbtn" id="addState">＋ 新增州府</button>`:""}
+      ${editing?"":'<div class="readonly-tip">右上角「进入编辑」后可修改</div>'}`;
+  }else{
+    const s = r.states[selected.si];
+    panel.innerHTML = `
+      <span class="badge state">州 / 府</span>
+      <h2>${esc(s.n)}</h2>
+      ${fieldHTML("州府名（可改）",`<input type="text" data-k="n" value="${esc(s.n)}" ${editing?"":"readonly"}>`)}
+      ${fieldHTML("所属道",`<div class="geo-box" style="font-size:13px">${esc(r.name)}</div>`)}
+      ${editing
+        ? fieldHTML("下辖县（每行一个，可增删）",`<textarea data-k="co" rows="6">${esc((s.co||[]).join("\n"))}</textarea>`)
+        : fieldHTML(`下辖县（${(s.co||[]).length}）`,
+            `<div class="county-box">${(s.co||[]).map(c=>`<span class="county-chip">${esc(c)}</span>`).join("")}</div>`)}
+      ${editing
+        ? fieldHTML("风物 / 地理简述",`<textarea data-k="de" rows="2">${esc(s.de||"")}</textarea>`)
+        : (s.de?fieldHTML("风物",`<div class="geo-box">${esc(s.de)}</div>`):"")}
+      ${editing
+        ? fieldHTML("地方志故事（简短）",`<textarea data-k="st" rows="4">${esc(s.st||"")}</textarea>`)
+        : (s.st?fieldHTML("地方志 · 故事",`<div class="story-box">${esc(s.st)}</div>`):"")}
+      ${editing
+        ? fieldHTML("地方特产",`<textarea data-k="sp" rows="2">${esc(s.sp||"")}</textarea>`)
+        : (s.sp?fieldHTML("地方特产",`<div class="geo-box">${esc(s.sp)}</div>`):"")}
+      ${editing?"":'<div class="readonly-tip">右上角「进入编辑」后可修改名称、县与故事</div>'}`;
+  }
+  bindPanel();
+}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");}
+
+function bindPanel(){
+  panel.querySelectorAll("[data-k]").forEach(inp=>{
+    inp.addEventListener("input",()=>{
+      const k = inp.dataset.k;
+      const obj = selected.type==="region" ? DATA.regions[selected.ri] : DATA.regions[selected.ri].states[selected.si];
+      if(k==="co"){ obj.co = inp.value.split("\n").map(s=>s.trim()).filter(Boolean); }
+      else obj[k] = inp.value;
+      if(k==="name"||k==="n"||k==="color") render();
+      scheduleSave();
+    });
+  });
+  panel.querySelectorAll("[data-go]").forEach(c=>{
+    c.addEventListener("click",()=>selectState(selected.ri,+c.dataset.go));
+  });
+  const addBtn=document.getElementById("addState");
+  if(addBtn) addBtn.addEventListener("click",()=>{
+    const r=DATA.regions[selected.ri];
+    r.states.push({n:"【新州府】",x:r.cx+10,y:r.cy+10,co:["【新县】"]});
+    scheduleSave(); render(); renderPanel();
+  });
+}
+
+/* ================================================================
+   缩放 / 平移
+   ================================================================ */
+const viewport = document.getElementById("viewport");
+let scale=1, tx=0, ty=0;
+function updateT(){ viewport.setAttribute("transform",`translate(${tx},${ty}) scale(${scale})`); applyZoomLabels(); }
+function zoomAt(f, cx, cy){
+  const ns = Math.min(3.2, Math.max(0.85, scale*f));
+  const f2 = ns/scale;
+  tx = cx - (cx-tx)*f2; ty = cy - (cy-ty)*f2; scale = ns;
+  updateT();
+}
+document.getElementById("zin").onclick=()=>zoomAt(1.25,640,480);
+document.getElementById("zout").onclick=()=>zoomAt(0.8,640,480);
+document.getElementById("zreset").onclick=()=>{scale=1;tx=0;ty=0;updateT();};
+
+const mapEl=document.getElementById("map");
+mapEl.addEventListener("wheel",(e)=>{
+  e.preventDefault();
+  const pt = svgPoint(e.clientX,e.clientY);
+  zoomAt(e.deltaY<0?1.12:0.89, pt.x, pt.y);
+},{passive:false});
+function svgPoint(cx,cy){
+  const r = mapEl.getBoundingClientRect();
+  // account for meet-aspect padding
+  const vb={w:1280,h:960};
+  const s=Math.min(r.width/vb.w,r.height/vb.h);
+  const ox=r.left+(r.width-vb.w*s)/2, oy=r.top+(r.height-vb.h*s)/2;
+  return {x:(cx-ox)/s, y:(cy-oy)/s};
+}
+let dragging=false, sx0, sy0;
+mapEl.addEventListener("mousedown",(e)=>{
+  if(e.target.closest(".statedot,.regionPath")) return;
+  dragging=true; sx0=e.clientX-tx; sy0=e.clientY-ty; mapEl.classList.add("dragging");
+});
+window.addEventListener("mousemove",(e)=>{
+  if(!dragging) return;
+  const r=mapEl.getBoundingClientRect();
+  const s=Math.min(r.width/1280,r.height/960);
+  tx=(e.clientX-sx0)/s; ty=(e.clientY-sy0)/s; updateT();
+});
+window.addEventListener("mouseup",()=>{dragging=false;mapEl.classList.remove("dragging");});
+
+/* ================================================================
+   朝代切换
+   ================================================================ */
+const dynSwitch = document.getElementById("dynSwitch");
+const dynYears  = document.getElementById("dynYears");
+function renderDynSwitch(){
+  dynSwitch.innerHTML = "";
+  DYNASTIES.forEach(d=>{
+    const b = document.createElement("button");
+    b.textContent = d.name;
+    b.dataset.key = d.key;
+    if(d.key===currentDynasty) b.classList.add("on");
+    b.addEventListener("click",()=>switchDynasty(d.key));
+    dynSwitch.appendChild(b);
+  });
+}
+function switchDynasty(key){
+  currentDynasty = key;
+  const d = dynastyOf();
+  // 更新国号显示（不写回 DATA，仅展示）
+  document.getElementById("dynasty").textContent = d.title;
+  document.getElementById("subtitle").textContent = "疆域全图 · "+d.years+" · 五朝合制底图";
+  dynYears.textContent = d.desc;
+  renderDynSwitch();
+  selected = null;
+  render();
+  renderPanel();
+}
+renderDynSwitch();
+// 初始化国号显示
+(function initDynasty(){
+  const d = dynastyOf();
+  document.getElementById("dynasty").textContent = d.title;
+  dynYears.textContent = d.desc;
+})();
+
+/* ================================================================
+   工具栏
+   ================================================================ */
+document.getElementById("dynasty").addEventListener("blur",(e)=>{
+  DATA.dynasty=e.target.textContent.trim(); scheduleSave();
+});
+document.getElementById("subtitle").addEventListener("blur",(e)=>{
+  DATA.subtitle=e.target.textContent.trim(); scheduleSave();
+});
+const editBtn=document.getElementById("editBtn");
+editBtn.addEventListener("click",()=>{
+  editing=!editing;
+  document.body.classList.toggle("editing",editing);
+  editBtn.textContent = editing?"✓ 完成编辑":"✎ 进入编辑";
+  editBtn.classList.toggle("on",editing);
+  const d=document.getElementById("dynasty");
+  d.setAttribute("contenteditable",editing?"true":"false");
+  document.getElementById("subtitle").setAttribute("contenteditable",editing?"true":"false");
+  renderPanel();
+});
+document.getElementById("exportBtn").onclick=()=>{
+  const blob=new Blob([JSON.stringify(DATA,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="疆域地图数据备份.json"; a.click();
+};
+document.getElementById("importBtn").onclick=()=>document.getElementById("importFile").click();
+document.getElementById("importFile").addEventListener("change",(e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(!d.regions) throw 0;
+      DATA=d; scheduleSave(); boot(); alert("导入成功");
+    }catch(err){alert("文件格式不正确");}
+  };
+  rd.readAsText(f);
+});
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("确定恢复全部默认内容？当前修改将丢失（建议先导出备份）。")){
+    DATA=structuredClone(DEFAULT_DATA); scheduleSave(); boot();
+  }
+};
+document.getElementById("printBtn").onclick=()=>window.print();
+
+/* ================================================================
+   数据桥接：供 js/supabase-cloud.js 云端存取调用（只读/替换 DATA，
+   不触碰原有绘图、节点、缩放、压感手绘等任何逻辑）
+   ================================================================ */
+window.getCanvasData = function(){ return structuredClone(DATA); };
+window.setCanvasData = function(d){
+  DATA = d;
+  localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+  render(); renderPanel();
+};
+window.clearCanvasData = function(){
+  DATA = { dynasty:"【国号】", subtitle:"", regions:[] };
+  localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+  render(); renderPanel();
+};
+
+/* ================================================================
+   启动
+   ================================================================ */
+function boot(){
+  selected=null;
+  switchDynasty(currentDynasty);   // 统一国号/副标题/说明并重绘
+}
+boot();
+</script>
+
+<!-- 历史事件图层（数据 + 图层控制），加载后初始化控件 -->
+<script src="js/history-events.js"></script>
+<script>window.HistoryLayer && HistoryLayer.init();</script>
+<!-- Supabase 云端：登录拦截 / 保存 / 加载 / 清空 / 退出 -->
+<script src="js/supabase-cloud.js"></script>
+</body>
+</html>

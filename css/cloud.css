@@ -1,0 +1,59 @@
+/* ================================================================
+ * css/cloud.css
+ * 仅包含「新增」样式：Supabase 登录遮罩、云端按钮、历史事件控件
+ * 原有画布/地图内联样式与绘图功能不受影响。
+ * ================================================================ */
+
+/* ---------- 登录遮罩（未登录全屏拦截） ---------- */
+#authGate{
+  position:fixed; inset:0; z-index:9999;
+  background:radial-gradient(circle at 50% 30%,#2a2118,#15100a);
+  display:flex; align-items:center; justify-content:center;
+  font-family:"Kaiti SC","STKaiti","KaiTi","Songti SC",serif;
+}
+#authGate.hidden{display:none}
+.auth-card{
+  width:380px; max-width:90vw;
+  background:linear-gradient(#f6eeda,#ece1c4);
+  border:2px solid #6b4f2e; border-radius:10px;
+  padding:30px 32px; box-shadow:0 18px 60px rgba(0,0,0,.55);
+}
+.auth-card h1{font-size:23px;letter-spacing:3px;text-align:center;margin-bottom:4px;color:#3d2b1a}
+.auth-card .auth-sub{font-size:12px;color:#7a5c33;text-align:center;margin-bottom:22px}
+.auth-card label{display:block;font-size:12px;color:#7a5c33;margin:12px 0 5px}
+.auth-card input{
+  width:100%; font-family:inherit; font-size:14px; color:#3d2b1a;
+  background:#fffaf0; border:1px solid #c8b487; border-radius:5px; padding:9px 11px;
+}
+.auth-card button{
+  width:100%; margin-top:24px; font-family:inherit; font-size:16px; letter-spacing:4px;
+  color:#f7efda; background:#a83c2a; border:1px solid #7d2c1e; border-radius:5px; padding:10px; cursor:pointer;
+}
+.auth-card button:hover{background:#bd4632}
+.auth-card button:disabled{opacity:.6;cursor:not-allowed}
+.auth-msg{min-height:20px;font-size:12.5px;margin-top:14px;text-align:center;color:#a83c2a;line-height:1.6}
+.auth-msg.ok{color:#2f6b3f}
+.auth-tip{font-size:11px;color:#9a8357;text-align:center;margin-top:16px;line-height:1.7}
+
+/* ---------- 顶部云端用户区 ---------- */
+#userChip{font-size:12px;color:#7a5c33;display:flex;align-items:center;gap:6px}
+#userChip .dot{width:7px;height:7px;border-radius:50%;background:#2f6b3f;display:inline-block}
+
+/* ---------- 历史事件图层控件（地图右上角） ---------- */
+.event-ctl{
+  position:absolute; right:14px; top:14px; z-index:20;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  background:#f2ead6ee; border:1px solid #b89c6a; border-radius:6px;
+  padding:7px 11px; max-width:300px;
+  font-family:"Kaiti SC","STKaiti","KaiTi",serif;
+}
+.ev-switch{font-size:13px;color:#3d2b1a;display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+.ev-switch input{cursor:pointer}
+.ev-chip{
+  font-size:12px; color:#7a5c33; cursor:pointer; user-select:none;
+  background:#e6dcc0; border:1px solid #c2ad7c; border-radius:12px; padding:2px 10px;
+}
+.ev-chip.on{background:#3d2b1a;color:#f7efda;border-color:#3d2b1a}
+.ev-label{font-size:10.5px;paint-order:stroke;stroke:#f7efda;stroke-width:2.6px;pointer-events:none}
+.ev-dot{cursor:pointer}
+.ev-dot:hover circle,.ev-dot:hover rect{filter:brightness(1.12)}
