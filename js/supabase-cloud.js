@@ -91,7 +91,7 @@ async function saveCanvasToCloud(){
       .eq("id", rows[0].id));
   }else{
     ({ error:err } = await client.from(TABLE)
-      .insert([{ user_id:user.id, name:"我的疆域画布", data:snapshot }]);
+      .insert([{ user_id:user.id, name:"我的疆域画布", data:snapshot }]));
   }
   if(err){ flash("保存失败："+err.message,false); alert("保存失败："+err.message); return; }
   flash("已保存到云端 "+new Date().toLocaleTimeString());
